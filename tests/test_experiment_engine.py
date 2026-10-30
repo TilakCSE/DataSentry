@@ -7,7 +7,8 @@ import pandas as pd
 
 from datasentry.corruption import corrupt_training_features
 from datasentry.experiment import (ExperimentConfig, make_group_split,
-                                  normalize_feature_missing, run_experiment)
+                                  normalize_feature_missing, normalize_categorical_values,
+                                  deduplicate_training_rows, run_experiment)
 from datasentry.preprocessing import (CategoricalModeImputer, IQRClipper,
                                       build_preprocessor, select_strategy)
 
@@ -77,6 +78,38 @@ class ExperimentEngineTests(unittest.TestCase):
         transformed = prep.transform(held_out)
         self.assertEqual(transformed.shape[0], 2)
         self.assertTrue(np.isfinite(transformed).all())
+
+    def test_static_categorical_normalization(self):
+        source = pd.DataFrame({"category": [" Ａ\t B  ", "a  b", None],
+                               "amount": [1, 2, 3]})
+        result = normalize_categorical_values(source)
+        self.assertEqual(result.category.tolist()[:2], ["a b", "a b"])
+        self.assertTrue(pd.isna(result.category.iloc[2]))
+        self.assertEqual(result.amount.tolist(), [1, 2, 3])
+        self.assertEqual(source.category.iloc[0], " Ａ\t B  ")
+
+    def test_dedup_uses_features_and_target_and_only_training_rows(self):
+        features = pd.DataFrame({"x": [1, 1, 1, 2], "c": ["a", "a", "a", "b"]})
+        target = pd.Series([3.0, 3.0, 4.0, 5.0])
+        reduced_x, reduced_y, removed = deduplicate_training_rows(features, target)
+        self.assertEqual(removed, 1)
+        self.assertEqual(len(reduced_x), 3)
+        self.assertEqual(reduced_y.tolist(), [3.0, 4.0, 5.0])
+        self.assertEqual(len(features), 4)
+
+    def test_exploratory_arms_reuse_split_and_report_dedup_count(self):
+        source = pd.DataFrame({"x": np.repeat(np.arange(20), 2),
+                               "c": [" Ａ ", " Ａ "] * 20,
+                               "target": np.repeat(np.arange(20), 2).astype(float)})
+        config = ExperimentConfig(seeds=(11,), levels=(0.0,),
+                                  mechanisms=("mcar",),
+                                  strategies=("median", "dedup", "normalize"),
+                                  models=("ridge",))
+        result = run_experiment(source, "target", config)
+        self.assertEqual(result.split_sha256.nunique(), 1)
+        self.assertEqual(result.mask_sha256.nunique(), 1)
+        self.assertGreater(result.loc[result.strategy.eq("dedup"), "dedup_rows_removed"].iloc[0], 0)
+        self.assertTrue(result.loc[result.strategy.eq("normalize"), "preprocessing_recipe"].eq("median").all())
 
     def test_policy_reads_training_missingness(self):
         frame = pd.DataFrame({"x": np.arange(500, dtype=float),
