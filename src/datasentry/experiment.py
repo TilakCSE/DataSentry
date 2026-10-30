@@ -8,7 +8,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import hashlib
+import re
 import time
+import unicodedata
 
 import numpy as np
 import pandas as pd
@@ -68,7 +70,7 @@ def _validate(frame: pd.DataFrame, target: str, config: ExperimentConfig) -> Non
         raise ValueError("Corruption levels must be between 0 and 1")
     for values, supported, label in [
         (config.mechanisms, {"mcar", "mar", "extreme"}, "mechanism"),
-        (config.strategies, {"median", "knn", "iqr", "adaptive"}, "strategy"),
+        (config.strategies, {"median", "knn", "iqr", "adaptive", "dedup", "normalize"}, "strategy"),
         (config.models, {"ridge", "forest", "mlp"}, "model"),
     ]:
         bad = set(values) - supported
@@ -101,6 +103,36 @@ def normalize_feature_missing(features: pd.DataFrame) -> pd.DataFrame:
     return features.replace(r"^\s*$", np.nan, regex=True)
 
 
+def normalize_categorical_values(features: pd.DataFrame) -> pd.DataFrame:
+    """Apply a fixed Unicode and spacing rule to categorical feature cells.
+
+    This is a rowwise transform without learned statistics. It may be applied
+    to both partitions while the held-out rows remain uncorrupted.
+    """
+    result = features.copy(deep=True)
+    categorical = result.select_dtypes(exclude="number").columns
+    for column in categorical:
+        result[column] = result[column].map(
+            lambda value: re.sub(r"\s+", " ", unicodedata.normalize("NFKC", value)).strip().casefold()
+            if isinstance(value, str) else value
+        )
+    return normalize_feature_missing(result)
+
+
+def deduplicate_training_rows(features: pd.DataFrame, target: pd.Series
+                              ) -> tuple[pd.DataFrame, pd.Series, int]:
+    """Remove exact feature-plus-target duplicates from training rows only."""
+    target_key = "__datasentry_target__"
+    while target_key in features.columns:
+        target_key += "_"
+    key = features.copy()
+    key[target_key] = target.to_numpy()
+    keep = ~key.duplicated()
+    removed = int((~keep).sum())
+    return (features.loc[keep].reset_index(drop=True),
+            target.loc[keep].reset_index(drop=True), removed)
+
+
 def _estimator(model: str, seed: int, config: ExperimentConfig):
     if model == "ridge":
         return Ridge(alpha=1.0)
@@ -113,12 +145,14 @@ def _estimator(model: str, seed: int, config: ExperimentConfig):
 
 def run_experiment(frame: pd.DataFrame, target: str,
                    config: ExperimentConfig | None = None) -> pd.DataFrame:
-    """Evaluate every arm on identical, untouched held-out rows per seed.
+    """Evaluate every arm on identical held-out rows per seed.
 
     Synthetic corruption touches only copied training features. Each cleaning
     transformer and estimator is fitted only on that corrupted training copy.
     The target and held-out features are never used to choose a recipe. The
-    adaptive policy is a fixed heuristic, not an optimized winner.
+    adaptive policy is a fixed heuristic, not an optimized winner. The optional
+    normalization arm applies the same fixed text rule to held-out features;
+    neither held-out targets nor held-out feature statistics are used in fitting.
     """
     config = config or ExperimentConfig()
     _validate(frame, target, config)
@@ -143,13 +177,23 @@ def run_experiment(frame: pd.DataFrame, target: str,
                 for strategy in config.strategies:
                     actual = selected if strategy == "adaptive" else strategy
                     for model in config.models:
+                        started = time.perf_counter()
+                        train_features, train_target = condition.frame, y_train
+                        predict_features = x_test
+                        removed = 0
+                        if strategy == "dedup":
+                            train_features, train_target, removed = deduplicate_training_rows(
+                                train_features, train_target)
+                        elif strategy == "normalize":
+                            train_features = normalize_categorical_values(train_features)
+                            predict_features = normalize_categorical_values(predict_features)
+                        recipe = "median" if strategy in {"dedup", "normalize"} else actual
                         pipeline = Pipeline([
-                            ("preprocess", build_preprocessor(condition.frame, actual)),
+                            ("preprocess", build_preprocessor(train_features, recipe)),
                             ("model", _estimator(model, seed, config)),
                         ])
-                        started = time.perf_counter()
-                        pipeline.fit(condition.frame, y_train)
-                        prediction = pipeline.predict(x_test)
+                        pipeline.fit(train_features, train_target)
+                        prediction = pipeline.predict(predict_features)
                         elapsed = time.perf_counter() - started
                         rows.append({
                             "seed": seed,
@@ -157,6 +201,7 @@ def run_experiment(frame: pd.DataFrame, target: str,
                             "level": level,
                             "strategy": strategy,
                             "selected_strategy": actual,
+                            "preprocessing_recipe": recipe,
                             "comparison_role": ("original_reference" if level == 0 and strategy == "median"
                                                 else "corrupted_minimal_repair" if level > 0 and strategy == "median"
                                                 else "cleaning_alternative"),
@@ -169,6 +214,8 @@ def run_experiment(frame: pd.DataFrame, target: str,
                             "mask_sha256": condition.mask_sha256,
                             "split_sha256": split_sha,
                             "train_rows": len(x_train),
+                            "train_rows_after_cleaning": len(train_features),
+                            "dedup_rows_removed": removed,
                             "test_rows": len(x_test),
                             "missing_fraction": float(condition.frame.isna().to_numpy().mean()),
                         })
