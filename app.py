@@ -29,7 +29,10 @@ STRATEGY_NAMES = {
     "knn": "KNN numeric imputation",
     "iqr": "Median / mode + IQR clipping",
     "adaptive": "Training-guided selection",
+    "dedup": "Remove exact training duplicates (exploratory)",
+    "normalize": "Normalize categorical text (exploratory)",
 }
+PAPER_STRATEGIES = ("median", "knn", "iqr", "adaptive")
 
 
 st.set_page_config(page_title="DataSentry AI", page_icon="🔎", layout="wide")
@@ -92,6 +95,8 @@ def show_results(results: pd.DataFrame) -> None:
         st.error("The experiment returned no usable metric rows.")
         return
     st.success(f"Completed {len(results):,} fitted model comparisons. Metrics below use held-out rows.")
+    if set(results["strategy"]) - set(PAPER_STRATEGIES):
+        st.info("Duplicate removal and text normalization are exploratory analyses. They are outside the four-strategy paper grid.")
     comparisons = results.copy()
     baseline = (
         comparisons.loc[comparisons["strategy"] == "median",
@@ -183,8 +188,9 @@ def main() -> None:
                                             format_func=lambda value: MECHANISM_NAMES[value])
                 levels_pct = st.multiselect("Corruption levels (%)", [0, 5, 15, 30], default=[0, 15])
                 strategies = st.multiselect("Cleaning strategies", list(STRATEGY_NAMES),
-                                            default=list(STRATEGY_NAMES),
+                                            default=list(PAPER_STRATEGIES),
                                             format_func=lambda value: STRATEGY_NAMES[value])
+                st.caption("The four selected strategies form the paper comparison. Duplicate removal and text normalization are optional exploratory checks for uploaded CSVs.")
             with right:
                 models = st.multiselect("Predictive models", list(MODEL_NAMES),
                                         default=["ridge", "forest"],
