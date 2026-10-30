@@ -1,0 +1,42 @@
+{
+  "input_sha256": "a2a35772ad286f82911f84cb36daabc08caf2b496a574d11265644b3b4489ae9",
+  "input_rows": 768,
+  "target": "heating_load",
+  "config": {
+    "seeds": [
+      11,
+      23,
+      37,
+      53,
+      71
+    ],
+    "levels": [
+      0.0,
+      0.05,
+      0.15,
+      0.3
+    ],
+    "mechanisms": [
+      "mcar",
+      "mar",
+      "extreme"
+    ],
+    "strategies": [
+      "median",
+      "knn",
+      "iqr",
+      "adaptive"
+    ],
+    "models": [
+      "ridge",
+      "forest",
+      "mlp"
+    ],
+    "test_size": 0.2,
+    "drop_columns": [],
+    "forest_estimators": 100,
+    "mlp_max_iter": 250
+  },
+  "result_rows": 720,
+  "pandas": "3.1.0"
+}

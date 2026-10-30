@@ -1,0 +1,5 @@
+# Full-study environment and audit trail
+
+The three `*_full.csv` files were produced locally on Windows with Python 3.13.7, pandas 3.1.0, NumPy 2.5.4, scikit-learn 1.9.1, and matplotlib 3.11.2. The accompanying Streamlit interface was verified with Streamlit 1.66.1. All study arms used the parameters and source-data SHA-256 hashes in the adjacent JSON manifests. Each file has 720 rows; together they record 2,160 fitted arms. Each row includes the outer split seed, corruption condition, strategy, model, input split and mask hashes, affected-cell count, selected recipe, held-out metrics, and run time.
+
+`../study_summary.csv`, `../mcar_curves.pdf`, and `../policy_heatmap.pdf` are derived from these frozen run files by `../../experiments/summarize_study.py`. Its grid validation requires all four strategies and common split/mask hashes for each paired condition. Exact wall-clock durations depend on machine load, so do not use them as cross-machine benchmarks. The MLP reached its iteration limit in some runs; all such fits and outcomes remain in the recorded evidence.

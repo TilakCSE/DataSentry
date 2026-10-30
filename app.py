@@ -199,9 +199,12 @@ def main() -> None:
                 st.caption("A five-seed run provides a more stable estimate but takes longer.")
             run_count = seed_count * len(mechanisms) * len(levels_pct) * len(strategies) * len(models)
             st.caption(f"Planned model fits: {run_count:,}. Results are measured only after you run them.")
+            if strategies and "median" not in strategies:
+                st.warning("Select Median / mode to provide the paired comparison baseline.")
             run_spec = (source_sha256, target, tuple(exclusions), tuple(mechanisms),
                         tuple(sorted(levels_pct)), tuple(strategies), tuple(models), seed_count)
-            if st.button("Run held-out comparison", type="primary", disabled=run_count == 0):
+            if st.button("Run held-out comparison", type="primary",
+                         disabled=run_count == 0 or "median" not in strategies):
                 config = ExperimentConfig(
                     seeds=(11, 23, 37, 53, 71)[:seed_count],
                     levels=tuple(value / 100 for value in sorted(levels_pct)),
