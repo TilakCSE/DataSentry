@@ -70,7 +70,9 @@ def paired_summary(all_runs: pd.DataFrame) -> pd.DataFrame:
 
 
 def plot_heatmap(summary: pd.DataFrame, output: Path) -> None:
-    selected = summary.loc[summary.strategy.eq("adaptive") & summary.level.eq(0.30)]
+    # At 15%, the frozen policy can select all three candidate recipes; at
+    # 30% it usually reverts to median/mode and the visual is mostly ties.
+    selected = summary.loc[summary.strategy.eq("adaptive") & summary.level.eq(0.15)]
     limit = max(1.0, float(selected.mean_paired_percent_delta.abs().max()))
     fig, axes = plt.subplots(1, 3, figsize=(11.3, 3.5), constrained_layout=True)
     norm = TwoSlopeNorm(vmin=-limit, vcenter=0, vmax=limit)
