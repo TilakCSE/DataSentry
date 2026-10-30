@@ -7,7 +7,8 @@ import pandas as pd
 
 from datasentry.corruption import corrupt_training_features
 from datasentry.experiment import ExperimentConfig, make_group_split, run_experiment
-from datasentry.preprocessing import IQRClipper, select_strategy
+from datasentry.preprocessing import (CategoricalModeImputer, IQRClipper,
+                                      build_preprocessor, select_strategy)
 
 
 class ExperimentEngineTests(unittest.TestCase):
@@ -45,6 +46,19 @@ class ExperimentEngineTests(unittest.TestCase):
         clip = IQRClipper().fit(np.array([[0.], [1.], [2.], [3.]]))
         predicted = clip.transform(np.array([[100.]]))
         self.assertAlmostEqual(float(predicted[0, 0]), 4.5)
+
+    def test_categorical_mode_comes_from_training_and_empty_column_is_safe(self):
+        train = pd.DataFrame({"color": ["red", "red", "blue", None],
+                              "empty": [None, None, None, None]})
+        held_out = pd.DataFrame({"color": [None, "green"],
+                                 "empty": [None, None]})
+        imputer = CategoricalModeImputer().fit(train)
+        self.assertEqual(imputer.transform(held_out).tolist(),
+                         [["red", "<MISSING>"], ["green", "<MISSING>"]])
+        prep = build_preprocessor(train, "median").fit(train)
+        transformed = prep.transform(held_out)
+        self.assertEqual(transformed.shape[0], 2)
+        self.assertTrue(np.isfinite(transformed).all())
 
     def test_policy_reads_training_missingness(self):
         frame = pd.DataFrame({"x": np.arange(500, dtype=float),

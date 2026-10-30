@@ -21,14 +21,20 @@ def main() -> None:
     parser.add_argument("--drop", nargs="*", default=[])
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--quick", action="store_true", help="One seed and compact grid for smoke tests")
+    parser.add_argument("--seeds", nargs="+", type=int,
+                        help="Run a seed batch and write it to a separate output CSV")
+    parser.add_argument("--mechanisms", nargs="+", choices=("mcar", "mar", "extreme"))
+    parser.add_argument("--levels", nargs="+", type=float)
+    parser.add_argument("--strategies", nargs="+", choices=("median", "knn", "iqr", "adaptive"))
+    parser.add_argument("--models", nargs="+", choices=("ridge", "forest", "mlp"))
     args = parser.parse_args()
     frame = pd.read_csv(args.csv)
     config = ExperimentConfig(
-        seeds=(11,) if args.quick else (11, 23, 37, 53, 71),
-        levels=(0.0, 0.15) if args.quick else (0.0, 0.05, 0.15, 0.30),
-        mechanisms=("mcar", "extreme") if args.quick else ("mcar", "mar", "extreme"),
-        strategies=("median", "iqr", "adaptive") if args.quick else ("median", "knn", "iqr", "adaptive"),
-        models=("ridge", "forest") if args.quick else ("ridge", "forest", "mlp"),
+        seeds=tuple(args.seeds) if args.seeds else ((11,) if args.quick else (11, 23, 37, 53, 71)),
+        levels=tuple(args.levels) if args.levels else ((0.0, 0.15) if args.quick else (0.0, 0.05, 0.15, 0.30)),
+        mechanisms=tuple(args.mechanisms) if args.mechanisms else (("mcar", "extreme") if args.quick else ("mcar", "mar", "extreme")),
+        strategies=tuple(args.strategies) if args.strategies else (("median", "iqr", "adaptive") if args.quick else ("median", "knn", "iqr", "adaptive")),
+        models=tuple(args.models) if args.models else (("ridge", "forest") if args.quick else ("ridge", "forest", "mlp")),
         drop_columns=tuple(args.drop),
     )
     result = run_experiment(frame, args.target, config)
