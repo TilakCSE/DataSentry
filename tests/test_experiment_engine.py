@@ -6,7 +6,8 @@ import numpy as np
 import pandas as pd
 
 from datasentry.corruption import corrupt_training_features
-from datasentry.experiment import ExperimentConfig, make_group_split, run_experiment
+from datasentry.experiment import (ExperimentConfig, make_group_split,
+                                  normalize_feature_missing, run_experiment)
 from datasentry.preprocessing import (CategoricalModeImputer, IQRClipper,
                                       build_preprocessor, select_strategy)
 
@@ -25,6 +26,23 @@ class ExperimentEngineTests(unittest.TestCase):
         train, test = make_group_split(x, self.frame.target, 11, 0.2)
         self.assertFalse(set(train).intersection(test))
         self.assertEqual(0 in train, 39 in train)
+
+    def test_whitespace_only_categories_are_missing_before_group_split(self):
+        frame = self.frame.copy(deep=True)
+        frame.loc[0, "category"] = "   "
+        frame.loc[39, ["numeric", "category"]] = [frame.loc[0, "numeric"], np.nan]
+        normalized = normalize_feature_missing(frame.drop(columns="target"))
+        self.assertTrue(pd.isna(normalized.loc[0, "category"]))
+        self.assertTrue(pd.isna(normalized.loc[39, "category"]))
+        train, test = make_group_split(normalized, frame.target, 11, 0.2)
+        self.assertEqual(0 in train, 39 in train)
+        self.assertFalse(pd.isna(frame.loc[0, "category"]))
+        config = ExperimentConfig(seeds=(11,), levels=(0.0,),
+                                  mechanisms=("mcar",), strategies=("median",),
+                                  models=("ridge",))
+        result = run_experiment(frame, "target", config)
+        self.assertEqual(len(result), 1)
+        self.assertTrue(np.isfinite(result.rmse).all())
 
     def test_corruption_is_repeatable_and_does_not_mutate_source(self):
         x = self.frame.drop(columns="target")

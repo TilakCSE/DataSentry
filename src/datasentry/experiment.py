@@ -92,6 +92,15 @@ def make_group_split(features: pd.DataFrame, target: pd.Series, seed: int,
     return train, test
 
 
+def normalize_feature_missing(features: pd.DataFrame) -> pd.DataFrame:
+    """Treat blank and whitespace-only feature strings as missing, row by row.
+
+    This fixed normalization has no learned parameters, so applying it before
+    grouping and splitting cannot use held-out statistics.
+    """
+    return features.replace(r"^\s*$", np.nan, regex=True)
+
+
 def _estimator(model: str, seed: int, config: ExperimentConfig):
     if model == "ridge":
         return Ridge(alpha=1.0)
@@ -113,7 +122,7 @@ def run_experiment(frame: pd.DataFrame, target: str,
     """
     config = config or ExperimentConfig()
     _validate(frame, target, config)
-    features = frame.drop(columns=[target, *config.drop_columns]).copy()
+    features = normalize_feature_missing(frame.drop(columns=[target, *config.drop_columns]))
     y = pd.to_numeric(frame[target]).astype(float)
     # CSVs may contain boolean values; sklearn handles them as categories here.
     features = features.replace([np.inf, -np.inf], np.nan)
