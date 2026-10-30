@@ -31,6 +31,36 @@ class IQRClipper(BaseEstimator, TransformerMixin):
         return np.clip(np.asarray(X, dtype=float), self.lower_, self.upper_)
 
 
+class CategoricalModeImputer(BaseEstimator, TransformerMixin):
+    """Fill each categorical column with its training mode.
+
+    An entirely missing training column has no mode, so it receives a stable
+    sentinel. String normalization also allows mixed CSV category types to be
+    encoded consistently by OneHotEncoder.
+    """
+
+    def __init__(self, empty_value: str = "<MISSING>"):
+        self.empty_value = empty_value
+
+    def fit(self, X, y=None):
+        values = pd.DataFrame(X)
+        self.n_features_in_ = values.shape[1]
+        self.fill_values_ = []
+        for column in values.columns:
+            observed = values[column].dropna().astype(str)
+            mode = observed.value_counts().index[0] if len(observed) else self.empty_value
+            self.fill_values_.append(mode)
+        return self
+
+    def transform(self, X):
+        values = pd.DataFrame(X).copy()
+        if values.shape[1] != self.n_features_in_:
+            raise ValueError("Categorical column count changed after fit")
+        for index, fill_value in enumerate(self.fill_values_):
+            values.iloc[:, index] = values.iloc[:, index].fillna(fill_value).astype(str)
+        return values.to_numpy(dtype=object)
+
+
 def select_strategy(train_features: pd.DataFrame) -> str:
     """Frozen heuristic using only the available training features.
 
@@ -68,8 +98,7 @@ def build_preprocessor(train_features: pd.DataFrame, strategy: str) -> ColumnTra
         transformers.append(("numeric", Pipeline(steps), numeric))
     if categorical:
         transformers.append(("categorical", Pipeline([
-            ("impute", SimpleImputer(strategy="constant", fill_value="<MISSING>",
-                                      keep_empty_features=True)),
+            ("impute", CategoricalModeImputer()),
             ("encode", OneHotEncoder(handle_unknown="ignore", sparse_output=False)),
         ]), categorical))
     return ColumnTransformer(transformers, sparse_threshold=0)
