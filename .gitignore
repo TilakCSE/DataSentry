@@ -10,3 +10,6 @@ dist/
 /results/
 *.joblib
 *.log
+
+# Presentation and research notes belong in the DSML folder.
+/presentation/
